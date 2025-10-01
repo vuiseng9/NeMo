@@ -1,0 +1,37 @@
+_target_: nemo_run.core.execution.local.LocalExecutor
+env_vars:
+  NCCL_NVLS_ENABLE: '0'
+  NEMORUN_HOME: /opt/NeMo/scripts/performance/perf-run
+  NEMO_LOG_MEMORY_USAGE: '1'
+  NVTE_BWD_LAYERNORM_SM_MARGIN: '16'
+  NVTE_FLASH_ATTN: '1'
+  NVTE_FUSED_ATTN: '1'
+  NVTE_FWD_LAYERNORM_SM_MARGIN: '16'
+  TOKENIZERS_PARALLELISM: 'False'
+  TORCH_NCCL_AVOID_RECORD_STREAMS: '1'
+  TORCH_NCCL_HIGH_PRIORITY: '1'
+  TRANSFORMERS_OFFLINE: '1'
+experiment_id: pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs_1759294134
+job_dir: /opt/NeMo/scripts/performance/perf-run/experiments/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs_1759294134/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs
+launcher:
+  _target_: nemo_run.core.execution.launcher.Launcher
+  nsys_extra_args:
+  - --force-overwrite=true
+  - --capture-range=cudaProfilerApi
+  - --capture-range-end=stop
+  - --cuda-graph-trace=node
+  - --cuda-event-trace=false
+  nsys_filename: profile_%p
+  nsys_folder: nsys_profile
+  nsys_gpu_metrics: false
+  nsys_profile: false
+  nsys_trace:
+  - nvtx
+  - cuda
+nodes: 1
+ntasks_per_node: 8
+packager:
+  _target_: nemo_run.core.packaging.base.Packager
+  debug: false
+  symlink_from_remote_dir: null
+retries: 0

@@ -1,0 +1,40 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "perf dryrun",
+            "type": "debugpy",
+            "request": "launch",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {},
+            "cwd": "/opt/NeMo/scripts/performance/llm",
+            "module": "scripts.performance.llm.pretrain_llama3_8b",
+            "args": [
+                // "-h",
+                "-g", "b200", "--compute_dtype", "fp8", "--dryrun"
+                // "--fp8_recipe", "mxfp8",
+                // "--gpus_per_node", "1", "--num_gpus", "1",
+                // "-mb", "2",
+                // "-gb", "8",
+                // "-tp", "1",
+                // "-pp", "1",
+                // "-cp", "1",
+                // "-vp", "1",
+                // "-ep", "1",
+                // "--cuda_graphs", "1",
+                // "--max_steps", "10",
+            ]
+        },
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        }
+    ]
+}

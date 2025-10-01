@@ -1,0 +1,139 @@
+_partial_: true
+_target_: nemo.collections.llm.api.pretrain
+data:
+  _target_: nemo.collections.llm.gpt.data.mock.MockDataModule
+  global_batch_size: 128
+  micro_batch_size: 2
+  num_train_samples: 6400
+  seq_length: 8192
+  tokenizer:
+    _target_: nemo.collections.nlp.modules.common.tokenizer_utils.get_nmt_tokenizer
+    library: 'null'
+    model_name: NullTokenizer
+    vocab_size: 128256
+log:
+  _target_: nemo.lightning.nemo_logger.NeMoLogger
+  ckpt: null
+  log_dir: null
+  name: default
+  tensorboard: null
+  wandb: null
+model:
+  _target_: nemo.collections.llm.gpt.model.llama.LlamaModel
+  config:
+    _target_: nemo.collections.llm.gpt.model.llama.Llama3Config8B
+    cross_entropy_fusion_impl: te
+    enable_cuda_graph: true
+  tokenizer:
+    _target_: nemo.collections.nlp.modules.common.tokenizer_utils.get_nmt_tokenizer
+    library: 'null'
+    model_name: NullTokenizer
+    vocab_size: 128256
+optim:
+  _target_: nemo.lightning.pytorch.optim.megatron.MegatronOptimizerModule
+  config:
+    _target_: megatron.core.optimizer.optimizer_config.OptimizerConfig
+    adam_beta1: 0.9
+    adam_beta2: 0.95
+    adam_eps: 1.0e-05
+    bf16: true
+    clip_grad: 1.0
+    fp16: false
+    lr: 0.0003
+    optimizer: adam
+    use_distributed_optimizer: true
+    use_precision_aware_optimizer: false
+    weight_decay: 0.1
+  lr_scheduler:
+    _target_: nemo.lightning.pytorch.optim.lr_scheduler.CosineAnnealingScheduler
+    constant_steps: 0
+    min_lr: 2.9999999999999997e-05
+    warmup_steps: 2000
+resume:
+  _target_: nemo.lightning.resume.AutoResume
+  resume_if_exists: true
+  resume_ignore_no_checkpoint: true
+trainer:
+  _target_: nemo.lightning.pytorch.trainer.Trainer
+  accelerator: gpu
+  accumulate_grad_batches: 1
+  callbacks:
+  - _target_: nemo.utils.exp_manager.TimingCallback
+  - _target_: nemo.lightning.pytorch.callbacks.garbage_collection.GarbageCollectionCallback
+    gc_interval_train: 100
+    gc_interval_val: 100
+  - _target_: nemo.lightning.pytorch.callbacks.megatron_comm_overlap.MegatronCommOverlapCallback
+    overlap_param_gather_with_optimizer_step: false
+    tp_comm_overlap: false
+  - _target_: nemo.lightning.pytorch.callbacks.flops_callback.FLOPsMeasurementCallback
+    data_config:
+      _target_: nemo.collections.llm.gpt.data.mock.MockDataModule
+      global_batch_size: 128
+      micro_batch_size: 2
+      num_train_samples: 6400
+      seq_length: 8192
+      tokenizer:
+        _target_: nemo.collections.nlp.modules.common.tokenizer_utils.get_nmt_tokenizer
+        library: 'null'
+        model_name: NullTokenizer
+        vocab_size: 128256
+    model_config:
+      _target_: nemo.collections.llm.gpt.model.llama.Llama3Config8B
+      cross_entropy_fusion_impl: te
+      enable_cuda_graph: true
+    model_name: llama3
+  devices: 8
+  enable_checkpointing: false
+  limit_test_batches: 50
+  limit_val_batches: 0
+  log_every_n_steps: 1
+  logger: false
+  max_steps: 50
+  num_nodes: 1
+  plugins:
+    _target_: nemo.lightning.pytorch.plugins.mixed_precision.MegatronMixedPrecision
+    autocast_enabled: false
+    fp8: hybrid
+    fp8_amax_compute_algo: max
+    fp8_amax_history_len: 1024
+    fp8_margin: 0
+    fp8_param_gather: true
+    fp8_recipe: delayed
+    grad_reduce_in_fp32: false
+    params_dtype:
+      _call_: false
+      _target_: torch.bfloat16
+    pipeline_dtype:
+      _call_: false
+      _target_: torch.bfloat16
+    precision: bf16-mixed
+  strategy:
+    _target_: nemo.lightning.pytorch.strategies.megatron_strategy.MegatronStrategy
+    ckpt_async_save: true
+    ckpt_parallel_load: true
+    context_parallel_size: 1
+    ddp:
+      _target_: megatron.core.distributed.distributed_data_parallel_config.DistributedDataParallelConfig
+      average_in_collective: true
+      check_for_large_grads: false
+      check_for_nan_in_grad: false
+      data_parallel_sharding_strategy: optim_grads_params
+      fsdp_double_buffer: false
+      grad_reduce_in_fp32: true
+      keep_fp8_transpose_cache_when_using_custom_fsdp: false
+      nccl_ub: false
+      overlap_grad_reduce: true
+      overlap_param_gather: true
+    expert_model_parallel_size: 1
+    expert_tensor_parallel_size: null
+    fsdp: null
+    gradient_as_bucket_view: true
+    pipeline_dtype: null
+    pipeline_model_parallel_size: 1
+    sequence_parallel: false
+    tensor_model_parallel_size: 1
+    use_sharp: false
+    use_te_rng_tracker: true
+    virtual_pipeline_model_parallel_size: null
+  use_distributed_sampler: false
+  val_check_interval: 50

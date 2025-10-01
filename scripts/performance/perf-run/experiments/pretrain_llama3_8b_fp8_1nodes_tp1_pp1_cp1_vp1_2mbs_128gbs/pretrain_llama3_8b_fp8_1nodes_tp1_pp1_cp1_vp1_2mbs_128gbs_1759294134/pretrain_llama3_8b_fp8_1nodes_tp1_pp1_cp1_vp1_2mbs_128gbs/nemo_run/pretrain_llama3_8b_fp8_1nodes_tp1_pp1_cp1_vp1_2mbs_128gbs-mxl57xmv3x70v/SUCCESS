@@ -1,0 +1,18 @@
+{
+  "app_id": "pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs-mxl57xmv3x70v",
+  "log_dir": "/opt/NeMo/scripts/performance/perf-run/experiments/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs_1759294134/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs/nemo_run/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs-mxl57xmv3x70v",
+  "final_state": "FAILED",
+  "last_updated": 1759294149.0202024,
+  "roles": {
+    "pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs": [
+      {
+        "replica_id": 0,
+        "pid": 460974,
+        "exitcode": 1,
+        "stdout": "/opt/NeMo/scripts/performance/perf-run/experiments/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs_1759294134/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs/nemo_run/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs-mxl57xmv3x70v/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs/0/stdout.log",
+        "stderr": "/opt/NeMo/scripts/performance/perf-run/experiments/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs_1759294134/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs/nemo_run/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs-mxl57xmv3x70v/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs/0/stderr.log",
+        "error_file": "/opt/NeMo/scripts/performance/perf-run/experiments/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs_1759294134/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs/nemo_run/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs-mxl57xmv3x70v/pretrain_llama3_8b_fp8_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs/0/error.json"
+      }
+    ]
+  }
+}
