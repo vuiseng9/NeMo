@@ -1,3 +1,4 @@
+## Pretrain BF16
 python -m scripts.performance.llm.pretrain_llama3_8b -g b200 --max_steps 100
 
 8xb200-dc       Wed Oct  1 03:37:50 2025  580.82.07
@@ -27,7 +28,7 @@ Training epoch 0, iteration 49/99 | lr: 7.496e-06 | global_batch_size: 128 | glo
 
 pretrain_llama3_8b_bf16_1nodes_tp1_pp1_cp1_vp1_2mbs_128gbs_1759289474
 
-
+## Pretrain FP8 
 export NEMORUN_HOME=/opt/NeMo/scripts/performance/perf-run
 python -m scripts.performance.llm.pretrain_llama3_8b -g b200 --max_steps 50 --compute_dtype fp8 --fp8_recipe ds 
 
@@ -35,9 +36,38 @@ Tokens per step (global) = GBS × L = 128 × 8192 = 1,048,576
 Tokens/sec (global) = (GBS × L) / t_step = 1,048,576 / 4.15 = 252669
 Tokens/sec/GPU = Tokens/sec (global) / 8 = 252669 / 8 = 31583
 
-export NEMORUN_HOME=/opt/NeMo/scripts/performance/new-perf-run
+## Pretrain MXFP8 
+export NEMORUN_HOME=/opt/NeMo/scripts/performance/perf-run
 python -m scripts.performance.llm.pretrain_llama3_8b -g b200 --max_steps 50 --compute_dtype fp8 --fp8_recipe mxfp8 
 
 
+## SFT FP8
+vs-hf-login # this doesnt help
+export NEMORUN_HOME=/root/work/sft-perf-run
+export NEMO_HOME=/root/work/nemo
+python -m scripts.performance.llm.finetune_llama3_8b -g b200 -f sft --max_steps 50 -hf <token> --compute_dtype fp8 --fp8_recipe ds 
 
+Training epoch 0, iteration 11/49 | lr: 1.176e-06 | global_batch_size: 8 | global_step: 11 | max_memory_reserved: 114554830848 | max_memory_allocated: 98299420672 | reduced_train_loss: 1.076 | train_step_timing in s: 0.4893 | consumed_samples: 96
+Training epoch 0, iteration 12/49 | lr: 1.275e-06 | global_batch_size: 8 | global_step: 12 | max_memory_reserved: 114554830848 | max_memory_allocated: 98299420672 | reduced_train_loss: 1.08 | train_step_timing in s: 0.4943 | consumed_samples: 104
+Training epoch 0, iteration 13/49 | lr: 1.373e-06 | global_batch_size: 8 | global_step: 13 | max_memory_reserved: 114554830848 | max_memory_allocated: 98299420672 | reduced_train_loss: 1.115 | train_step_timing in s: 0.4941 | consumed_samples: 112
+Training epoch 0, iteration 14/49 | lr: 1.471e-06 | global_batch_size: 8 | global_step: 14 | max_memory_reserved: 114554830848 | max_memory_allocated: 98299420672 | reduced_train_loss: 1.063 | train_step_timing in s: 0.4916 | consumed_samples: 120
+Training epoch 0, iteration 15/49 | lr: 1.569e-06 | global_batch_size: 8 | global_step: 15 | max_memory_reserved: 114554830848 | max_memory_allocated: 98299420672 | reduced_train_loss: 1.104 | train_step_timing in s: 0.4922 | consumed_samples: 128
+
+GBS=8, NGPU=8, L=16384
+16384/0.495 = 33099 tokens/sec/gpu
+
+## SFT MXFP8
+export NEMORUN_HOME=/root/work/sft-perf-run
+export NEMO_HOME=/root/work/nemo
+python -m scripts.performance.llm.finetune_llama3_8b -g b200 -f sft --max_steps 50 -hf <token> --compute_dtype fp8 --fp8_recipe mxfp8 
 check! stdout.log
+
+Training epoch 0, iteration 44/49 | lr: 4.412e-06 | global_batch_size: 8 | global_step: 44 | max_memory_reserved: 127890620416 | max_memory_allocated: 108314099712 | reduced_train_loss: 13.97 | train_step_timing in s: 0.5171 | consumed_samples: 360
+Training epoch 0, iteration 45/49 | lr: 4.51e-06 | global_batch_size: 8 | global_step: 45 | max_memory_reserved: 127890620416 | max_memory_allocated: 108314099712 | reduced_train_loss: 13.99 | train_step_timing in s: 0.5182 | consumed_samples: 368
+Training epoch 0, iteration 46/49 | lr: 4.608e-06 | global_batch_size: 8 | global_step: 46 | max_memory_reserved: 127890620416 | max_memory_allocated: 108314099712 | reduced_train_loss: 14.0 | train_step_timing in s: 0.5179 | consumed_samples: 376
+Training epoch 0, iteration 47/49 | lr: 4.706e-06 | global_batch_size: 8 | global_step: 47 | max_memory_reserved: 127890620416 | max_memory_allocated: 108314099712 | reduced_train_loss: 13.96 | train_step_timing in s: 0.5173 | consumed_samples: 384
+Training epoch 0, iteration 48/49 | lr: 4.804e-06 | global_batch_size: 8 | global_step: 48 | max_memory_reserved: 127890620416 | max_memory_allocated: 108314099712 | reduced_train_loss: 13.99 | train_step_timing in s: 0.5177 | consumed_samples: 392
+Training epoch 0, iteration 49/49 | lr: 4.902e-06 | global_batch_size: 8 | global_step: 49 | max_memory_reserved: 127890620416 | max_memory_allocated: 108314099712 | reduced_train_loss: 13.98 | train_step_timing in s: 0.5187 | consumed_samples: 400
+
+GBS=8, NGPU=8, L=16384
+16384/0.52 = 31507 tokens/sec/gpu
