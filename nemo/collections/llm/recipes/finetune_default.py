@@ -22,7 +22,7 @@ import nemo.lightning as nl
 from nemo.collections import llm
 from nemo.collections.llm.gpt.data.packed_sequence import PackedSequenceSpecs
 from nemo.collections.llm.peft import DoRA, LoRA
-from nemo.collections.llm.recipes.log.default import tensorboard_logger
+from nemo.collections.llm.recipes.log.default import tensorboard_logger, wandb_logger
 from nemo.collections.llm.recipes.optim.adam import distributed_fused_adam_with_cosine_annealing
 from nemo.collections.llm.recipes.precision.mixed_precision import bf16_mixed
 from nemo.lightning.pytorch.callbacks import PEFT
@@ -84,7 +84,8 @@ def default_finetune_recipe(
             num_gpus_per_node=num_gpus_per_node,
         ),
         data=datamodule,
-        log=default_finetune_log(dir=dir, name=name, tensorboard_logger=tensorboard_logger(name=name)),
+        # log=default_finetune_log(dir=dir, name=name, tensorboard_logger=tensorboard_logger(name=name)),
+        log=default_finetune_log(dir=dir, name=name, wandb_logger=wandb_logger(project=name, name=name)),
         optim=distributed_fused_adam_with_cosine_annealing(max_lr=1e-4, min_lr=0, warmup_steps=50, adam_beta2=0.98),
         resume=nemo_resume(resume_path),
         tokenizer=tokenizer,
