@@ -35,5 +35,9 @@ Tokens per step (global) = GBS × L = 128 × 8192 = 1,048,576
 Tokens/sec (global) = (GBS × L) / t_step = 1,048,576 / 4.15 = 252669
 Tokens/sec/GPU = Tokens/sec (global) / 8 = 252669 / 8 = 31583
 
-export NEMORUN_HOME=/opt/NeMo/scripts/performance/perf-run
+export NEMORUN_HOME=/opt/NeMo/scripts/performance/new-perf-run
 python -m scripts.performance.llm.pretrain_llama3_8b -g b200 --max_steps 50 --compute_dtype fp8 --fp8_recipe mxfp8 
+
+
+
+check! stdout.log
