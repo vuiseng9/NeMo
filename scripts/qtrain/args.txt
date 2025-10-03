@@ -1,0 +1,139 @@
+usage: pretrain_llama3_8b.py [-h] [-a ACCOUNT] [-p PARTITION] -g
+                             {h100,b200,gb200} [-l LOG_DIR] [-t TIME_LIMIT]
+                             [-i CONTAINER_IMAGE] [-c {bf16,fp8}]
+                             [-fr {ds,cs,mxfp8,ss}] [-en] [-em]
+                             [-mp MEMORY_PROFILE_OUT_PATH] [-tb] [-wd]
+                             [-wdk WANDB_KEY] [-wdp WANDB_PRJ_NAME]
+                             [-wdj WANDB_JOB_NAME] [-f {sft,lora}]
+                             [-hf HF_TOKEN] [-nh NEMO_HOME] [-d]
+                             [-tp TENSOR_PARALLEL_SIZE]
+                             [-pp PIPELINE_PARALLEL_SIZE]
+                             [-cp CONTEXT_PARALLEL_SIZE]
+                             [-vp VIRTUAL_PIPELINE_PARALLEL_SIZE]
+                             [-ep EXPERT_PARALLEL_SIZE]
+                             [-et [EXPERT_TENSOR_PARALLEL_SIZE]]
+                             [-mb MICRO_BATCH_SIZE] [-gb GLOBAL_BATCH_SIZE]
+                             [-ng NUM_GPUS] [-gn GPUS_PER_NODE]
+                             [-ms MAX_STEPS] [-cg CUDA_GRAPHS]
+                             [-fsdp USE_MCORE_FSDP]
+                             [-fsdp_db USE_FSDP_DOUBLE_BUFFER]
+                             [-ubr USE_USER_BUFFER_REGISTRATION]
+                             [-sharp USE_SHARP] [-rl RECOMPUTE_LAYERS]
+                             [-ol ACTIVATION_OFFLOAD_LAYERS]
+                             [--nccl_communicator_config_path NCCL_COMMUNICATOR_CONFIG_PATH]
+                             [-rm [RECOMPUTE_MODULES ...]] [-cm CUSTOM_MOUNTS]
+                             [--use_hf_tokenizer]
+                             [--keep_fsdp_fp8_transpose_cache KEEP_FSDP_FP8_TRANSPOSE_CACHE]
+
+NeMo2.0 Performance Pretraining and Fine-Tuning
+
+options:
+  -h, --help            show this help message and exit
+  -a ACCOUNT, --account ACCOUNT
+                        Slurm account to use for experiment
+  -p PARTITION, --partition PARTITION
+                        Slurm partition to use for experiment
+  -g {h100,b200,gb200}, --gpu {h100,b200,gb200}
+                        Target gpu type.
+  -l LOG_DIR, --log_dir LOG_DIR
+                        Directory for logging experiment results. Defaults to
+                        /root/.nemo_run
+  -t TIME_LIMIT, --time_limit TIME_LIMIT
+                        Maximum time limit to run experiment for. Defaults to
+                        30 minutes (format- 'HH:MM:SS')
+  -i CONTAINER_IMAGE, --container_image CONTAINER_IMAGE
+                        NeMo container to use for experiment. Defaults to
+                        latest dev container- 'nvcr.io/nvidia/nemo:dev' Make
+                        sure your NGC credentials are accessible in your
+                        environment.
+  -c {bf16,fp8}, --compute_dtype {bf16,fp8}
+                        Compute precision. Options- bf16 or fp8. Defaults to
+                        bf16
+  -fr {ds,cs,mxfp8,ss}, --fp8_recipe {ds,cs,mxfp8,ss}
+                        FP8 recipe. Options- ds (per-tensor delayed scaling),
+                        cs (per-tensor current scaling), mxfp8, ss (subchannel
+                        scaling). Defaults to ds
+  -en, --enable_nsys    Enable Nsys profiling. Diabled by default
+  -em, --enable_memory_profile
+                        Enable memory usage profiling. Diabled by default
+  -mp MEMORY_PROFILE_OUT_PATH, --memory_profile_out_path MEMORY_PROFILE_OUT_PATH
+                        Path to the output file of memory profiling
+  -tb, --tensorboard    Enable tensorboard logging. Disabled by default
+  -wd, --wandb          Enable wandb logging. Disabled by default
+  -wdk WANDB_KEY, --wandb_key WANDB_KEY
+                        wandb key. Needed for wandb logger projetion to server
+  -wdp WANDB_PRJ_NAME, --wandb_prj_name WANDB_PRJ_NAME
+                        wandb project name
+  -wdj WANDB_JOB_NAME, --wandb_job_name WANDB_JOB_NAME
+                        wandb job name
+  -f {sft,lora}, --finetuning {sft,lora}
+                        Finetuning scheme to use. Defaults to 'lora'
+  -hf HF_TOKEN, --hf_token HF_TOKEN
+                        HuggingFace token. Defaults to None. Required for
+                        accessing tokenizers and checkpoints.
+  -nh NEMO_HOME, --nemo_home NEMO_HOME
+                        Sets env var `NEMO_HOME` (on compute node using sbatch
+                        script)- directory where NeMo searches for models and
+                        checkpoints. This saves a lot of time (especially for
+                        bigger models) if checkpoints already exist here.
+                        Missing files will be downloaded here from
+                        HuggingFace. Defaults to /root/.cache/nemo
+  -d, --dryrun          If true, prints sbatch script to terminal without
+                        launching experiment.
+  -tp TENSOR_PARALLEL_SIZE, --tensor_parallel_size TENSOR_PARALLEL_SIZE
+                        Intra-layer model parallelism. Splits tensors across
+                        GPU ranks.
+  -pp PIPELINE_PARALLEL_SIZE, --pipeline_parallel_size PIPELINE_PARALLEL_SIZE
+                        Inter-layer model parallelism. Splits transformer
+                        layers across GPU ranks.
+  -cp CONTEXT_PARALLEL_SIZE, --context_parallel_size CONTEXT_PARALLEL_SIZE
+                        Splits network input along sequence dimension across
+                        GPU ranks.
+  -vp VIRTUAL_PIPELINE_PARALLEL_SIZE, --virtual_pipeline_parallel_size VIRTUAL_PIPELINE_PARALLEL_SIZE
+                        Number of virtual blocks per pipeline model parallel
+                        rank is the virtual model parallel size.
+  -ep EXPERT_PARALLEL_SIZE, --expert_parallel_size EXPERT_PARALLEL_SIZE
+                        Distributes Moe Experts across sub data parallel
+                        dimension.
+  -et [EXPERT_TENSOR_PARALLEL_SIZE], --expert_tensor_parallel_size [EXPERT_TENSOR_PARALLEL_SIZE]
+                        Intra-layer tensor model parallelsm for expert layer.
+                        Splits tensors across GPU ranks. Use
+                        -et/--expert_tensor_parallel_size <space> for None or
+                        -et/--expert_tensor_parallel_size <int>
+  -mb MICRO_BATCH_SIZE, --micro_batch_size MICRO_BATCH_SIZE
+  -gb GLOBAL_BATCH_SIZE, --global_batch_size GLOBAL_BATCH_SIZE
+  -ng NUM_GPUS, --num_gpus NUM_GPUS
+                        Number of gpus.
+  -gn GPUS_PER_NODE, --gpus_per_node GPUS_PER_NODE
+                        Number of gpus per node. Defaults to 8
+  -ms MAX_STEPS, --max_steps MAX_STEPS
+                        Number of train steps. Defaults to 100
+  -cg CUDA_GRAPHS, --cuda_graphs CUDA_GRAPHS
+                        Enable CUDA graphs. Disabled by default
+  -fsdp USE_MCORE_FSDP, --use_mcore_fsdp USE_MCORE_FSDP
+                        Enable Megatron Core (Mcore) FSDP. Disabled by default
+  -fsdp_db USE_FSDP_DOUBLE_BUFFER, --use_fsdp_double_buffer USE_FSDP_DOUBLE_BUFFER
+                        Enable FSDP double buffer. Disabled by default
+  -ubr USE_USER_BUFFER_REGISTRATION, --use_user_buffer_registration USE_USER_BUFFER_REGISTRATION
+                        Enable user buffer registration. Disabled by default
+  -sharp USE_SHARP, --use_sharp USE_SHARP
+                        Enable sharp. Disabled by default
+  -rl RECOMPUTE_LAYERS, --recompute_layers RECOMPUTE_LAYERS
+                        Number of Transformer layers to recompute, where all
+                        the intermediate activations of a Transformer layer
+                        are computed. Defaults to None
+  -ol ACTIVATION_OFFLOAD_LAYERS, --activation_offload_layers ACTIVATION_OFFLOAD_LAYERS
+                        Number of Transformer layers to offload to the CPU
+                        memory. Defaults to None
+  --nccl_communicator_config_path NCCL_COMMUNICATOR_CONFIG_PATH
+                        Path to NCCL communicator config yaml file
+  -rm [RECOMPUTE_MODULES ...], --recompute_modules [RECOMPUTE_MODULES ...]
+                        List of modules to perform selective activation
+                        recompute. Users can provide 0 or any number of
+                        arguments. Defaults to None
+  -cm CUSTOM_MOUNTS, --custom_mounts CUSTOM_MOUNTS
+                        Comma separated string of mounts
+  --use_hf_tokenizer    Use HuggingFace tokenizer. Disabled by default. Null
+                        tokenizer will be used if not provided.
+  --keep_fsdp_fp8_transpose_cache KEEP_FSDP_FP8_TRANSPOSE_CACHE
+                        Keep FSDP FP8 transpose cache. Disabled by default

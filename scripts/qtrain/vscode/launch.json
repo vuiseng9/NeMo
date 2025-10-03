@@ -1,0 +1,42 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "h100x2 fp8 sft perf",
+            "type": "debugpy",
+            "request": "launch",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "NEMORUN_HOME": "/root/work/run/dev-perf-sft",
+                "NEMO_HOME": "/root/work/nemo",
+            },
+            "cwd": "${workspaceFolder}",
+            "module": "scripts.performance.llm.finetune_llama3_8b",
+            "args": [
+               "-f", "sft",
+               "-g", "h100", 
+               "--num_gpus", "2",
+               "--gpus_per_node", "2",
+               "--max_steps", "15", 
+               "-hf", "",
+               "--compute_dtype", "fp8", "--fp8_recipe", "ds",
+               "--dryrun"
+            ]
+        },
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        }
+    ]
+}
+
+python -m scripts.performance.llm.finetune_llama3_8b -g h100 --num_gpus 2 --gpus_per_node 2 --max_steps 15 -hf <> --compute_dtype fp8 --fp8_recipe ds -mb 1 -gb 32 -tp 1 -pp 1 -cp 1 -vp 1 -ep 1 -et 1 -cg 1
+
+git clone https://github.com/NVIDIA-NeMo/Run sample_nemo_run
