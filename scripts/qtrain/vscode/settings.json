@@ -1,13 +1,14 @@
 {
-    "workbench.colorTheme": "Visual Studio 2017 Light - C++",
+    "workbench.colorTheme": "Dracula Theme",
     "terminal.integrated.env.linux": {
         // "PIP_BREAK_SYSTEM_PACKAGES": "1", // to avoid pip installing packages that break system packages
         "WS_ROOT": "${workspaceFolder}",         // wr bash function to cd into workspace root
         "WS_ACTIVE_DIR": "/root/work/run/dev-perf-sft",  // ad  bash function to cd into active dir
         "WS_ACTIVE_DIR2": "/opt/NeMo/scripts/performance/llm", // ad2 bash function to cd into active dir2
         "WS_ACTIVE_DIR3": "/opt/NeMo/nemo/collections/llm/recipes", // ad3 bash function to cd into active dir3
-        "NEMORUN_HOME": "/root/work/run/dev-perf-sft",
+        "NEMORUN_HOME": "/root/work/run/sft-perf-fri",
         "NEMO_HOME": "/root/work/nemo",
+        "HUGGING_FACE_HUB_TOKEN": "" // set your HF token here if you want to avoid setting it in every terminal
     },
     // pytest configuration
     "python.testing.cwd": "${workspaceFolder}/path/to/test_folder",

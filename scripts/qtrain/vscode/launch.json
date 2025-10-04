@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "h100x2 fp8 sft perf",
+            "name": "h100x1 fp8 sft perf",
             "type": "debugpy",
             "request": "launch",
             "console": "integratedTerminal",
@@ -15,16 +15,42 @@
                 "NEMO_HOME": "/root/work/nemo",
             },
             "cwd": "${workspaceFolder}",
-            "module": "scripts.performance.llm.finetune_llama3_8b",
+            "module": "scripts.qtrain.perf_finetune_llama3_8b",
             "args": [
-               "-f", "sft",
+               "-f", "lora",
                "-g", "h100", 
-               "--num_gpus", "2",
-               "--gpus_per_node", "2",
+               "--num_gpus", "1",
+               "--gpus_per_node", "1",
                "--max_steps", "15", 
-               "-hf", "",
+               "-mb", "1", "-gb", "2", "-tp", "1", "-pp", "1", "-cp", "1", "-vp", "1", "-ep", "1", "-et", "1", "-cg", "1",
+            //    "-hf", "",
                "--compute_dtype", "fp8", "--fp8_recipe", "ds",
                "--dryrun"
+            ]
+        },
+        {
+            "name": "ootb h100x1 fp8 nemo lora",
+            "type": "debugpy",
+            "request": "launch",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "NEMORUN_HOME": "/root/work/run/dev-perf-sft",
+                "NEMO_HOME": "/root/work/nemo",
+            },
+            "cwd": "${workspaceFolder}",
+            "program": "/usr/local/bin/nemo",
+            "args": [
+                "llm", "finetune", "--factory", "llama3_8b",
+                "trainer.plugins=nemo.collections.llm.recipes.precision.mixed_precision.bf16_with_fp8_mixed",
+                "trainer.accelerator=gpu", "trainer.num_nodes=1", "trainer.devices=1",
+                "trainer.max_steps=50", "trainer.val_check_interval=10",
+                "log.log_dir=/root/work/run/fri-noon-ootb/",
+                // "log.ckpt.every_n_train_steps=10 log.ckpt.save_top_k=1",
+                // "log.wandb.project=tut-nemo-sft",
+                // "log.wandb.name=$run_label",
+                // "log.wandb.entity=vchua",
+                // "log.wandb.dir=$logdir/wandb",
             ]
         },
         {
@@ -36,7 +62,37 @@
         }
     ]
 }
-
-python -m scripts.performance.llm.finetune_llama3_8b -g h100 --num_gpus 2 --gpus_per_node 2 --max_steps 15 -hf <> --compute_dtype fp8 --fp8_recipe ds -mb 1 -gb 32 -tp 1 -pp 1 -cp 1 -vp 1 -ep 1 -et 1 -cg 1
-
 git clone https://github.com/NVIDIA-NeMo/Run sample_nemo_run
+
+export NEMO_HOME=/root/work/nemo
+export NEMORUN_HOME=/root/work/run/sft-perf-fri
+export HUGGING_FACE_HUB_TOKEN=<>
+runtype=lora
+python -m scripts.qtrain.perf_finetune_llama3_8b -g h100 \
+    -f $runtype \
+    --num_gpus 1 --gpus_per_node 1 --max_steps 50 \
+    -wd -wdk <> \
+    -wdp tut-nemo-sft -wdj fri-perf-h100x1-${runtype}-mod \
+    --compute_dtype fp8 --fp8_recipe ds \
+    -mb 1 -gb 32 -tp 1 -pp 1 -cp 1 -vp 1 -ep 1 -et 1 -cg 1
+    
+    // -hf <> \
+
+    HUGGING_FACE_HUB_TOKEN
+// ----------------------------------------------------------------------
+
+
+export NEMO_HOME=/root/work/nemo
+run_label=ootb-h100x1-lora_squad
+logdir=/root/work/run/fri-ootb/$run_label
+
+nemo llm finetune --factory llama3_8b \
+    trainer.plugins=nemo.collections.llm.recipes.precision.mixed_precision.bf16_with_fp8_mixed \
+    trainer.accelerator=gpu trainer.num_nodes=1 trainer.devices=1 \
+    trainer.max_steps=50 trainer.val_check_interval=10 \
+    log.log_dir=$logdir \
+    log.ckpt.every_n_train_steps=10 log.ckpt.save_top_k=1 \
+    log.wandb.project=tut-nemo-sft \
+    log.wandb.name=$run_label \
+    log.wandb.entity=vchua \
+    log.wandb.dir=$logdir/wandb

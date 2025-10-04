@@ -381,8 +381,8 @@ def set_primary_perf_configs(
     recipe.trainer.devices = num_gpus_per_node
     recipe.trainer.max_steps = max_steps
 
-    recipe.trainer.val_check_interval = max_steps
-    recipe.trainer.limit_val_batches = 0
+    recipe.trainer.val_check_interval = 10
+    # recipe.trainer.limit_val_batches = 0
 
     # lightning.pytorch.LightningDataModule configs
     recipe.data.micro_batch_size = mbs
@@ -453,7 +453,7 @@ def set_exp_logging_configs(
 
     if not enable_tb:  # tensorboard adds performance overhead.
         recipe.log.tensorboard = None
-        recipe.trainer.logger = False
+        # recipe.trainer.logger = False
     else:
         # default path is NOT intuitive- `<log_dir>/code/nemo_experiments/tb_logs/default/<tfevents_file>`
         recipe.log.log_dir = "/nemo_run/lightning_logs"  # saves file at- `<log_dir>/lightning_logs/tb_logs

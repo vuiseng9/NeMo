@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from os.path import basename, splitext
-
+from pathlib import Path
 import nemo_run as run
 
 from nemo.collections.llm.gpt.data.squad import SquadDataModule
 from nemo.collections.llm.recipes.llama3_8b import finetune_recipe, model
+from nemo.collections.llm.recipes.finetune_default import nemo_resume
 from nemo.collections.nlp.modules.common.tokenizer_utils import get_nmt_tokenizer
 from nemo.lightning.run.plugins import MemoryProfilePlugin, NsysPlugin, PerfEnvPlugin
 
@@ -25,6 +27,8 @@ from scripts.performance.argument_parser import parse_cli_args
 from scripts.performance.executors import slurm_executor, local_executor
 from scripts.performance.helpers import args_sanity_check, get_user_configs, set_exp_logging_configs, set_primary_perf_configs
 from scripts.performance.utils import hf_tokenizer, import_ckpt_experiment, isfile_train_pack_metadata
+
+from scripts.qtrain.config_visualizer import ConfigVisualizer
 
 HF_MODEL_URI = "meta-llama/Meta-Llama-3-8B"
 
@@ -120,8 +124,10 @@ if __name__ == "__main__":
         args, num_nodes, mbs, gbs, tp_size, pp_size, cp_size, vp_size, ep_size, enable_cuda_graphs
     )
 
-    exp_config = f"{num_nodes}nodes_tp{tp_size}_pp{pp_size}_cp{cp_size}_vp{vp_size}_{mbs}mbs_{gbs}gbs"
-    exp_name = f"{args.finetuning}_{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
+    # exp_config = f"{num_nodes}nodes_tp{tp_size}_pp{pp_size}_cp{cp_size}_vp{vp_size}_{mbs}mbs_{gbs}gbs"
+    # exp_name = f"{args.finetuning}_{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
+    exp_config = f"{args.num_gpus}gpus"
+    exp_name = f"{args.finetuning}_{args.compute_dtype}_{exp_config}"
 
     executor = local_executor(
         args.gpu.lower(),
@@ -152,16 +158,25 @@ if __name__ == "__main__":
     if args.enable_memory_profile:
         assert args.memory_profile_out_path is not None
         plugins.append(MemoryProfilePlugin(dir=args.memory_profile_out_path))
+    
+    # exp_dir = Path(run.config.get_nemorun_home())/"experiments"/exp_name
+    exp_dir = Path(run.config.get_nemorun_home())
+    viz = ConfigVisualizer(recipe, outdir=exp_dir)
+    viz.print_all()
+    viz.draw()
 
     with run.Experiment(exp_name) as exp:
-        if not SKIP_IMPORT:
-            assert args.hf_token is not None, "HF token is required for importing checkpoint from HuggingFace"
+        if not (Path(os.getenv("NEMO_HOME",""))/"models"/ HF_MODEL_URI).exists():
+            if os.getenv("HUGGING_FACE_HUB_TOKEN") is None:
+                raise ValueError("Model not found, need to download from hf and convert nemo format, pls set/export HUGGING_FACE_HUB_TOKEN")
             exp.add(*import_ckpt_experiment(executor, model(), source=f"hf://{HF_MODEL_URI}"))
+
         exp.add(
             recipe,
             executor=executor,
             name=exp_name,
             plugins=plugins,
+            tail_logs=True
         )
 
         if not args.dryrun:
