@@ -19,20 +19,21 @@ from pathlib import Path
 import nemo_run as run
 
 from megatron.core.distributed import DistributedDataParallelConfig
+from nemo.collections.llm.recipes.qwen3_8b import qwen3_model
+from nemo.collections.llm.recipes.llama3_8b import model
 from nemo.collections.llm.gpt.data.squad import SquadDataModule
 from nemo.collections.llm.gpt.data.mock import MockDataModule
-from nemo.collections.llm.recipes.llama3_8b import finetune_recipe, model
-# from nemo.collections.llm.recipes.qwen3_8b import finetune_recipe, model
+from nemo.collections.llm.gpt.data.packed_sequence import PackedSequenceSpecs
+# from nemo.collections.llm.recipes.llama3_8b import finetune_recipe, model
+from nemo.collections.llm.peft import PEFT_STR2CLS
 from nemo.collections.nlp.modules.common.tokenizer_utils import get_nmt_tokenizer
 from nemo.lightning.run.plugins import MemoryProfilePlugin, NsysPlugin, Optional, PerfEnvPlugin
 from nemo.utils import logging
+from nemo.utils.exp_manager import TimingCallback
+from nemo.lightning.pytorch.callbacks.megatron_comm_overlap import MegatronCommOverlapCallback
+from nemo.lightning.pytorch.callbacks.garbage_collection import GarbageCollectionCallback
 from nemo.lightning.pytorch.callbacks.flops_callback import FLOPsMeasurementCallback
 from nemo.lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
-from nemo.collections.llm.recipes.llama3_8b import MegatronCommOverlapCallback
-from nemo.collections.llm.peft import PEFT_STR2CLS
-from nemo.collections.llm.gpt.data.packed_sequence import PackedSequenceSpecs
-from nemo.lightning.pytorch.callbacks.garbage_collection import GarbageCollectionCallback
-from nemo.utils.exp_manager import TimingCallback
 
 # TODO can we be indepentend of?
 from nemo.collections.llm.recipes.precision.mixed_precision import (
@@ -131,6 +132,11 @@ SKIP_IMPORT = False
 
 #     return recipe
 
+SEQUENCE_LENGTH = 4096
+MBS = 1
+GBS = 512
+TRAIN_STEPS = 200
+VAL_INTERVAL = 50
 
 if __name__ == "__main__":
     args = parse_cli_args().parse_args()
@@ -140,35 +146,22 @@ if __name__ == "__main__":
         assert args.wandb_prj_name is not None, "wandb logger needs \"wandb_prj_name\""
         assert args.wandb_job_name is not None, "wandb logger needs \"wandb_job_name\""
 
-    kwargs = get_user_configs(args.gpu.lower(), args.finetuning, "llama3", "8b", args)
+    kwargs = get_user_configs(args.gpu.lower(), args.finetuning, "llama3", "8b", args) # since qwen3_8b is similar to llama3_8b, we use llama3_8b config
     num_nodes, mbs, gbs, tp_size, pp_size, cp_size, vp_size, ep_size, _, enable_cuda_graphs = kwargs[:10]
 
     finetuning_scheme = "none" if args.finetuning == "sft" else args.finetuning
 
     gpu_type = args.gpu.lower()
-    # recipe  =================================================================
-    if gpu_type in ["b200", "gb200"]:
-        seq_length=16384
-    
-    # recipe = finetune_recipe(peft_scheme=finetuning_scheme, performance_mode=True, seq_length=16384)
-    # else:
-    #     recipe = finetune_recipe(peft_scheme=finetuning_scheme, performance_mode=True)
+    num_gpus_per_node = args.gpus_per_node
+    max_steps = args.max_steps
 
-    # def finetune_recipe(
-    #     dir: Optional[str] = None,
-    #     name: str = "default",
-    #     num_nodes: int = 1,
-    #     num_gpus_per_node: int = 8,
-    #     peft_scheme: Optional[str] = 'lora',
-    #     seq_length: Optional[int] = None,
-    #     packed_sequence: Optional[bool] = None,
-    #     performance_mode: bool = False,
-    # ) -> run.Partial:
+    # recipe default initialization =================================================================
+    # TODO: do we really need this?
+    if gpu_type in ["b200", "gb200"]:
+        seq_length = 16384
 
     dir = None
     name = "default"
-    num_nodes = 1
-    num_gpus_per_node = 8
 
     peft_scheme=finetuning_scheme
     performance_mode=True
@@ -178,9 +171,17 @@ if __name__ == "__main__":
     if seq_length is None:
         seq_length = 4096 if packed_sequence else 2048
 
+    if HF_MODEL_URI == "meta-llama/Meta-Llama-3-8B":
+        model_cfg = model()
+    elif HF_MODEL_URI == "Qwen/Qwen3-8B":
+        model_cfg = qwen3_model(version="qwen3_8b")
+    else:
+        raise ValueError(f"Unrecognized model uri: {HF_MODEL_URI}")
+    
     recipe = default_finetune_recipe(
-        model(), "meta-llama/Meta-Llama-3-8B", dir, name, num_nodes, num_gpus_per_node, packed_sequence
+        model_cfg, HF_MODEL_URI, dir, name, num_nodes, num_gpus_per_node, packed_sequence
     )
+
     if peft_scheme is None or peft_scheme.lower() == 'none':
         recipe.trainer.strategy.tensor_model_parallel_size = 2
         recipe.optim.config.lr = 5e-6
@@ -189,7 +190,6 @@ if __name__ == "__main__":
         recipe.peft.dim = 8
         recipe.peft.alpha = 16
         recipe.optim.config.use_distributed_optimizer = False
-
         # some settings currently do not function correctly with LoRA
         recipe.model.config.cross_entropy_loss_fusion = False
         recipe.optim.config.lr = 1e-4
@@ -205,7 +205,6 @@ if __name__ == "__main__":
 
     if performance_mode:
         # recipe = finetune_performance_optimizations(recipe, peft_scheme)
-
         recipe.trainer.strategy.tensor_model_parallel_size = 1
 
         if not hasattr(recipe.trainer, "callbacks") or recipe.trainer.callbacks is None:
@@ -242,11 +241,9 @@ if __name__ == "__main__":
 
         recipe.optim.config.use_precision_aware_optimizer = False
     # =================================================================
-    task=finetuning_scheme
-    num_gpus_per_node=args.gpus_per_node
-    max_steps=args.max_steps
+    task = finetuning_scheme
+    
     etp_size = None
-
     use_mcore_fsdp = False
     use_fsdp_double_buffer = False
     use_user_buffer_registration = args.use_user_buffer_registration
@@ -262,9 +259,7 @@ if __name__ == "__main__":
     recipe.trainer.num_nodes = num_nodes
     recipe.trainer.devices = num_gpus_per_node
     recipe.trainer.max_steps = max_steps
-
-    recipe.trainer.val_check_interval = 10
-    # recipe.trainer.limit_val_batches = 0
+    recipe.trainer.limit_val_batches = 32
 
     # lightning.pytorch.LightningDataModule configs
     recipe.data.micro_batch_size = mbs
