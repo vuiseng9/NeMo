@@ -20,7 +20,7 @@ from nemo.collections.llm.recipes.llama3_8b import finetune_recipe, model
 from nemo.lightning.run.plugins import MemoryProfilePlugin, NsysPlugin
 
 from ..argument_parser import parse_cli_args
-from ..executors import slurm_executor
+from ..executors import slurm_executor, local_executor
 from ..helpers import (
     args_sanity_check,
     build_perf_env_plugin,
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     exp_config = f"{num_nodes}nodes_tp{tp_size}_pp{pp_size}_cp{cp_size}_vp{vp_size}_{mbs}mbs_{gbs}gbs"
     exp_name = f"{args.finetuning}_{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
 
-    executor = slurm_executor(
+    executor = local_executor(
         args.gpu.lower(),
         args.account,
         args.partition,
@@ -161,6 +161,7 @@ if __name__ == "__main__":
             executor=executor,
             name=exp_name,
             plugins=plugins,
+            tail_logs=True,
         )
 
         if not args.dryrun:
