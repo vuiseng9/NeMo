@@ -26,6 +26,7 @@ from nemo.collections.llm.recipes.precision.mixed_precision import (
     bf16_with_fp8_mixed,
     bf16_with_fp8_subchannel_scaling_mixed,
     bf16_with_mxfp8_mixed,
+    bf16_with_nvfp4_mixed,
 )
 from nemo.lightning.pytorch.callbacks.flops_callback import FLOPsMeasurementCallback
 from nemo.lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
@@ -230,6 +231,9 @@ def set_precision_configs(recipe, compute_dtype: str, fp8_recipe: str | None = N
             recipe.trainer.plugins = bf16_with_mxfp8_mixed()
         elif fp8_recipe.lower() == "ss":
             recipe.trainer.plugins = bf16_with_fp8_subchannel_scaling_mixed()
+        elif fp8_recipe.lower() == "nvfp4":
+            recipe.trainer.plugins = bf16_with_nvfp4_mixed()
+
 
     recipe.trainer.plugins.grad_reduce_in_fp32 = False
 
