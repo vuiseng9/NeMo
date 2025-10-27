@@ -98,10 +98,23 @@ def bf16_with_mxfp8_mixed() -> run.Config[MegatronMixedPrecision]:
     cfg = bf16_mixed()
     cfg.fp8 = 'hybrid'
     cfg.fp8_recipe = "mxfp8"
-    cfg.fp8_param_gather = True
-    cfg.reuse_grad_buf_for_mxfp8_param_ag = True
+    cfg.fp8_param_gather = False
+    cfg.reuse_grad_buf_for_mxfp8_param_ag = False
     return cfg
 
+
+def bf16_with_fw_nvfp4_bw_mxfp8() -> run.Config[MegatronMixedPrecision]:
+    """Create a MegatronMixedPrecision plugin configuration for mixed precision training using BF16 with MXFP8.
+
+    Returns:
+        run.Config[MegatronMixedPrecision]: Configuration for BF16 with MXFP8 mixed precision training
+    """
+    cfg = bf16_mixed()
+    cfg.fp8 = 'e2m1'
+    cfg.fp8_recipe = "nvfp4_fw_mxfp8_bw"
+    cfg.fp8_param_gather = False
+    cfg.reuse_grad_buf_for_mxfp8_param_ag = False
+    return cfg
 
 def fp16_with_mxfp8_mixed() -> run.Config[MegatronMixedPrecision]:
     """Create a MegatronMixedPrecision plugin configuration for mixed precision training using FP16 with MXFP8.

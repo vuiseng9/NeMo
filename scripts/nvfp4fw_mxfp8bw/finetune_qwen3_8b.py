@@ -13,27 +13,30 @@
 # limitations under the License.
 
 import os
-from os.path import basename, splitext
 from pathlib import Path
 
 import nemo_run as run
+from nemo_run.config import get_nemorun_home
 
-from megatron.core.distributed import DistributedDataParallelConfig
 from nemo.collections.llm.recipes.qwen3_8b import qwen3_model
 from nemo.collections.llm.recipes.llama3_8b import model
-from nemo.collections.llm.gpt.data.squad import SquadDataModule
-from nemo.collections.llm.gpt.data.mock import MockDataModule
-from nemo.collections.llm.gpt.data.packed_sequence import PackedSequenceSpecs
-# from nemo.collections.llm.recipes.llama3_8b import finetune_recipe, model
+from nemo.collections.llm.recipes.finetune_default import default_finetune_recipe
 from nemo.collections.llm.peft import PEFT_STR2CLS
+
+from nemo.collections.llm.gpt.data.mock import MockDataModule
+from nemo.collections.llm.gpt.data.squad import SquadDataModule
+from nemo.collections.llm.gpt.data.chat import ChatDataModule
+from nemo.collections.llm.gpt.data.packed_sequence import PackedSequenceSpecs
 from nemo.collections.nlp.modules.common.tokenizer_utils import get_nmt_tokenizer
-from nemo.lightning.run.plugins import MemoryProfilePlugin, NsysPlugin, Optional, PerfEnvPlugin
+
 from nemo.utils import logging
 from nemo.utils.exp_manager import TimingCallback
+from nemo.lightning.run.plugins import MemoryProfilePlugin, NsysPlugin, Optional, PerfEnvPlugin
 from nemo.lightning.pytorch.callbacks.megatron_comm_overlap import MegatronCommOverlapCallback
 from nemo.lightning.pytorch.callbacks.garbage_collection import GarbageCollectionCallback
 from nemo.lightning.pytorch.callbacks.flops_callback import FLOPsMeasurementCallback
 from nemo.lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
+from megatron.core.distributed import DistributedDataParallelConfig
 
 # TODO can we be indepentend of?
 from nemo.collections.llm.recipes.precision.mixed_precision import (
@@ -41,110 +44,28 @@ from nemo.collections.llm.recipes.precision.mixed_precision import (
     bf16_with_fp8_mixed,
     bf16_with_fp8_subchannel_scaling_mixed,
     bf16_with_mxfp8_mixed,
+    bf16_with_fw_nvfp4_bw_mxfp8,
 )
-from nemo.collections.llm.recipes.finetune_default import default_finetune_recipe
 
-from scripts.performance.argument_parser import parse_cli_args
 from scripts.performance.helpers import get_user_configs
-from scripts.performance.executors import local_executor
-from scripts.performance.utils import hf_tokenizer, import_ckpt_experiment, isfile_train_pack_metadata, get_comm_overlap_callback_idx
+from scripts.performance.utils import get_comm_overlap_callback_idx
 from scripts.nvfp4fw_mxfp8bw.config_visualizer import ConfigVisualizer
-HF_MODEL_URI = "meta-llama/Meta-Llama-3-8B"
-# HF_MODEL_URI = "Qwen/Qwen3-8B"
-
-# Set this to True if checkpoint is available at 'NEMO_HOME'. If set to False,
-# extra Slurm job will be scheduled. In this case, if checkpoint is available
-# at 'NEMO_HOME', fine-tuning job will use this checkpoint, else, it will be
-# downloaded from HuggingFace
-SKIP_IMPORT = False
-
-
-# def override_recipe_configs(
-#     args: str,
-#     num_nodes: int,
-#     mbs: int,
-#     gbs: int,
-#     tp_size: int,
-#     pp_size: int,
-#     cp_size: int,
-#     vp_size: int,
-#     ep_size: int,
-#     enable_cuda_graphs: bool,
-# ):
-#     """
-#     llama3 8b pre-train recipe aimed at achieving best possible performance.
-
-#     NOTE: Use fp8 precision training with caution. It might not give desirable results.
-#     """
-#     finetuning_scheme = "none" if args.finetuning == "sft" else args.finetuning
-
-#     gpu_type = args.gpu.lower()
-#     if gpu_type in ["b200", "gb200"]:
-#         recipe = finetune_recipe(peft_scheme=finetuning_scheme, performance_mode=True, seq_length=16384)
-#     else:
-#         recipe = finetune_recipe(peft_scheme=finetuning_scheme, performance_mode=True)
-
-#     recipe = set_primary_perf_configs(
-#         recipe,
-#         finetuning_scheme,
-#         num_nodes,
-#         args.gpus_per_node,
-#         mbs,
-#         gbs,
-#         args.max_steps,
-#         tp_size,
-#         pp_size,
-#         cp_size,
-#         vp_size,
-#         ep_size,
-#         enable_cuda_graphs=enable_cuda_graphs,
-#         compute_dtype=args.compute_dtype,
-#         fp8_recipe=args.fp8_recipe,
-#         nccl_communicator_config_path=args.nccl_communicator_config_path,
-#         use_user_buffer_registration=args.use_user_buffer_registration,
-#         use_sharp=args.use_sharp,
-#     )
-#     recipe = set_exp_logging_configs(
-#         recipe,
-#         finetuning_scheme,
-#         "llm",
-#         "llama3",
-#         args.tensorboard,
-#         args.wandb,
-#         args.wandb_prj_name,
-#         args.wandb_job_name,
-#     )
-
-#     # data module configs
-#     if args.use_hf_tokenizer:
-#         recipe.data.tokenizer = hf_tokenizer(HF_MODEL_URI)
-#     else:
-#         recipe.data.tokenizer = run.Config(
-#             get_nmt_tokenizer, library="null", model_name="NullTokenizer", vocab_size=128256
-#         )
-#         recipe.model.tokenizer = recipe.data.tokenizer
-#     if recipe.data.__fn_or_cls__ == SquadDataModule and not isfile_train_pack_metadata(HF_MODEL_URI, recipe.data):
-#         # flag is valid only for SquadDataModule
-#         recipe.data.force_redownload = True
-
-#     recipe.optim.config.use_distributed_optimizer = True
-#     recipe.model.config.disable_parameter_transpose_cache = True
-
-#     return recipe
+from scripts.nvfp4fw_mxfp8bw.helpers import local_executor, parse_cli_args, is_wandb_logged_in, import_ckpt_fn
+# HF_MODEL_URI = "meta-llama/Meta-Llama-3-8B"
+HF_MODEL_URI = "Qwen/Qwen3-8B"
 
 SEQUENCE_LENGTH = 4096
 MBS = 1
 GBS = 512
-TRAIN_STEPS = 200
-VAL_INTERVAL = 50
 
 if __name__ == "__main__":
     args = parse_cli_args().parse_args()
 
-    if args.wandb:
-        assert args.wandb_key is not None, "wandb logger needs \"wandb_key\""
-        assert args.wandb_prj_name is not None, "wandb logger needs \"wandb_prj_name\""
-        assert args.wandb_job_name is not None, "wandb logger needs \"wandb_job_name\""
+    if args.wandb_project is not None:
+        if not is_wandb_logged_in():
+            raise ValueError("⚠️  wandb is not logged in!\nPlease run: wandb login Or set WANDB_TOKEN environment variable")
+        else:
+            print("✓ wandb is authenticated")
 
     kwargs = get_user_configs(args.gpu.lower(), args.finetuning, "llama3", "8b", args) # since qwen3_8b is similar to llama3_8b, we use llama3_8b config
     num_nodes, mbs, gbs, tp_size, pp_size, cp_size, vp_size, ep_size, _, enable_cuda_graphs = kwargs[:10]
@@ -155,22 +76,49 @@ if __name__ == "__main__":
     num_gpus_per_node = args.gpus_per_node
     max_steps = args.max_steps
 
+    # data pipeline
+    # TODO flow logic
+    bf16_ckpt_path = str(Path(os.getenv("NEMO_HOME",""))/"models"/ HF_MODEL_URI)
+    tokenizer_path = os.path.join(bf16_ckpt_path, "context/nemo_tokenizer")
+    tokenizer = run.Config(
+        get_nmt_tokenizer,
+        library="huggingface",
+        model_name=tokenizer_path,
+        chat_template=None,
+    )
+    
+    # data_path = args.data_path if args.data_path is not None else f"{exp_dir}/openscience_proc"
+    data_path = "/root/work/run/qat_experiment/openscience_proc"
+    data = run.Config(
+        ChatDataModule,
+        dataset_root=data_path,
+        seq_length=SEQUENCE_LENGTH,
+        tokenizer=tokenizer,
+        global_batch_size=gbs,
+        micro_batch_size=mbs,
+        use_hf_tokenizer_chat_template=True,
+        num_workers=2,
+        persistent_workers=True,
+    )
+
+
     # recipe default initialization =================================================================
     # TODO: do we really need this?
     if gpu_type in ["b200", "gb200"]:
         seq_length = 16384
 
-    dir = None
-    name = "default"
 
     peft_scheme=finetuning_scheme
     performance_mode=True
-    packed_sequence = performance_mode
+    # packed_sequence = performance_mode
+    packed_sequence = False
 
     # For unpacked sequence, most samples in SQuAD dataset are shorter than 2K
+    seq_length = SEQUENCE_LENGTH # TODO
     if seq_length is None:
         seq_length = 4096 if packed_sequence else 2048
-
+    
+    
     if HF_MODEL_URI == "meta-llama/Meta-Llama-3-8B":
         model_cfg = model()
     elif HF_MODEL_URI == "Qwen/Qwen3-8B":
@@ -179,9 +127,10 @@ if __name__ == "__main__":
         raise ValueError(f"Unrecognized model uri: {HF_MODEL_URI}")
     
     recipe = default_finetune_recipe(
-        model_cfg, HF_MODEL_URI, dir, name, num_nodes, num_gpus_per_node, packed_sequence
+        model_cfg, HF_MODEL_URI, get_nemorun_home(), "default", num_nodes, num_gpus_per_node, packed_sequence
     )
 
+    recipe.data = data #TODO: where is the right place to put this?
     if peft_scheme is None or peft_scheme.lower() == 'none':
         recipe.trainer.strategy.tensor_model_parallel_size = 2
         recipe.optim.config.lr = 5e-6
@@ -192,7 +141,7 @@ if __name__ == "__main__":
         recipe.optim.config.use_distributed_optimizer = False
         # some settings currently do not function correctly with LoRA
         recipe.model.config.cross_entropy_loss_fusion = False
-        recipe.optim.config.lr = 1e-4
+        recipe.optim.config.lr = 1e-5
     else:
         raise ValueError(f"Unrecognized peft scheme: {peft_scheme}")
 
@@ -259,7 +208,8 @@ if __name__ == "__main__":
     recipe.trainer.num_nodes = num_nodes
     recipe.trainer.devices = num_gpus_per_node
     recipe.trainer.max_steps = max_steps
-    recipe.trainer.limit_val_batches = 32
+    recipe.trainer.limit_val_batches = args.val_max_steps
+    recipe.trainer.val_check_interval = args.val_interval
 
     # lightning.pytorch.LightningDataModule configs
     recipe.data.micro_batch_size = mbs
@@ -331,7 +281,7 @@ if __name__ == "__main__":
         recipe.data.packed_sequence_specs.pad_cu_seqlens = enable_cuda_graphs
 
     if use_mcore_fsdp:
-        # comm_overlap_callback_idx = get_comm_overlap_callback_idx(recipe.trainer.callbacks)
+        comm_overlap_callback_idx = get_comm_overlap_callback_idx(recipe.trainer.callbacks)
         if recipe.trainer.callbacks:  # default is None in lightning
             for idx, callback in enumerate(recipe.trainer.callbacks):
                 if callback.__fn_or_cls__ == MegatronCommOverlapCallback:
@@ -373,7 +323,8 @@ if __name__ == "__main__":
                 recipe.trainer.plugins = bf16_with_mxfp8_mixed()
             elif fp8_recipe.lower() == "ss":
                 recipe.trainer.plugins = bf16_with_fp8_subchannel_scaling_mixed()
-
+            elif fp8_recipe.lower() == "nv4f_mx8b":
+                recipe.trainer.plugins = bf16_with_fw_nvfp4_bw_mxfp8()
         recipe.trainer.plugins.grad_reduce_in_fp32 = False
 
     # Enable reuse_grad_buf_for_mxfp8_param_ag for MXFP8 and disable AG overlap
@@ -440,10 +391,6 @@ if __name__ == "__main__":
 
     domain="llm"
     model_name="llama3"
-    enable_tb=args.tensorboard
-    enable_wd=args.wandb
-    wandb_prj_name=args.wandb_prj_name
-    wandb_job_name=args.wandb_job_name
 
     if task == "pre_train" and domain == "llm":
         recipe.trainer.callbacks.append(
@@ -455,19 +402,7 @@ if __name__ == "__main__":
             )
         )
 
-    if not enable_tb:  # tensorboard adds performance overhead.
-        recipe.log.tensorboard = None
-        # recipe.trainer.logger = False
-    else:
-        # default path is NOT intuitive- `<log_dir>/code/nemo_experiments/tb_logs/default/<tfevents_file>`
-        recipe.log.log_dir = "/nemo_run/lightning_logs"  # saves file at- `<log_dir>/lightning_logs/tb_logs
-    if enable_wd:
-        from nemo.collections.llm.recipes.log.default import wandb_logger
 
-        recipe.log.wandb = wandb_logger(project=wandb_prj_name, name=wandb_job_name)
-
-    # Misc. for overall faster experiment runtime
-    recipe.log.ckpt = None
 
     # disable checkpointing if no ModelCheckpoint callback is found
     callbacks = recipe.trainer.callbacks
@@ -482,41 +417,29 @@ if __name__ == "__main__":
     # ================= eod et_exp_logging_configs
 
     # data module configs
-    if args.use_hf_tokenizer:
-        recipe.data.tokenizer = hf_tokenizer(HF_MODEL_URI)
-    else:
-        recipe.data.tokenizer = run.Config(
-            get_nmt_tokenizer, library="null", model_name="NullTokenizer", vocab_size=128256
-        )
-        recipe.model.tokenizer = recipe.data.tokenizer
-    if recipe.data.__fn_or_cls__ == SquadDataModule and not isfile_train_pack_metadata(HF_MODEL_URI, recipe.data):
-        # flag is valid only for SquadDataModule
-        recipe.data.force_redownload = True
+    # if args.use_hf_tokenizer:
+    #     recipe.data.tokenizer = hf_tokenizer(HF_MODEL_URI)
+    # else:
+    #     recipe.data.tokenizer = run.Config(
+    #         get_nmt_tokenizer, library="null", model_name="NullTokenizer", vocab_size=128256
+    #     )
+    #     recipe.model.tokenizer = recipe.data.tokenizer
+    # if recipe.data.__fn_or_cls__ == SquadDataModule and not isfile_train_pack_metadata(HF_MODEL_URI, recipe.data):
+    #     # flag is valid only for SquadDataModule
+    #     recipe.data.force_redownload = True
 
+    recipe.optim.config.lr = 1e-5
     recipe.optim.config.use_distributed_optimizer = True
     recipe.model.config.disable_parameter_transpose_cache = True
-
-    # --------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    # exp_config = f"{num_nodes}nodes_tp{tp_size}_pp{pp_size}_cp{cp_size}_vp{vp_size}_{mbs}mbs_{gbs}gbs"
-    # exp_name = f"{args.finetuning}_{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
-    exp_config = f"{args.num_gpus}gpus"
-    exp_name = f"{args.finetuning}_{args.compute_dtype}_{exp_config}"
-
+   
     executor = local_executor(
         args.gpu.lower(),
-        args.account,
-        args.partition,
-        args.log_dir,
+        get_nemorun_home(),
         num_nodes,
         args.gpus_per_node,
-        args.time_limit,
-        args.container_image,
         custom_mounts=args.custom_mounts,
         custom_env_vars={},
-        hf_token=args.hf_token,
         nemo_home=args.nemo_home,
-        wandb_key=args.wandb_key,
-        network='sharp' if args.use_sharp else None,
     )
 
     plugins = [
@@ -532,24 +455,44 @@ if __name__ == "__main__":
         assert args.memory_profile_out_path is not None
         plugins.append(MemoryProfilePlugin(dir=args.memory_profile_out_path))
 
-    # exp_dir = Path(run.config.get_nemorun_home())
-    # viz = ConfigVisualizer(recipe, outdir=exp_dir)
-    # viz.print_all()
-    # viz.draw()
-
-    with run.Experiment(exp_name) as exp:
+    model_id = f"{HF_MODEL_URI.split('/')[-1]}"
+    with run.Experiment(model_id) as exp:
         if not (Path(os.getenv("NEMO_HOME",""))/"models"/ HF_MODEL_URI).exists():
             if os.getenv("HF_TOKEN") is None:
                 raise ValueError("Model not found, need to download from hf and convert nemo format, pls set/export HF_TOKEN")
-            exp.add(*import_ckpt_experiment(executor, model(), source=f"hf://{HF_MODEL_URI}"), tail_logs=True)
+            s1 = exp.add(
+                *import_ckpt_fn(executor, model_cfg, source=f"hf://{HF_MODEL_URI}"),
+                name=f"01_import_{model_id}",tail_logs=True
+                )
 
-        exp.add(
+        # s2 ================================================================
+        if args.compute_dtype == "fp8":
+            exp_name = f"{model_id}_{args.finetuning}_f8_{args.fp8_recipe}"
+        else:
+            exp_name = f"{model_id}_{args.finetuning}_{args.compute_dtype}"
+        s2_name = f"02_{exp_name}"
+        recipe.log.log_dir = f"{exp._exp_dir}/{s2_name}"
+        recipe.log.ckpt.every_n_train_steps = args.save_interval
+
+        # # viz = ConfigVisualizer(recipe, outdir=exp._exp_dir)
+        # viz = ConfigVisualizer(recipe, outdir="./")
+        # viz.print_all()
+        # viz.draw()
+
+        if args.wandb_project is not None:
+            exp_tid = exp._exp_dir.split("_")[-1]
+            from nemo.collections.llm.recipes.log.default import wandb_logger
+            recipe.log.wandb = wandb_logger(project=args.wandb_project, name=f"{exp_tid}_{s2_name}")
+
+        s2 = exp.add(
             recipe,
             executor=executor,
-            name=exp_name,
+            name=s2_name,
             plugins=plugins,
             tail_logs=True
         )
+
+
 
         if not args.dryrun:
             exp.run(sequential=True, detach=True)

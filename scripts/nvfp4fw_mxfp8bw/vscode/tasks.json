@@ -1,0 +1,14 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "delete-cublaslt-log",
+      "type": "shell",
+      "command": "rm -f scripts/nvfp4fw_mxfp8bw/log.cublaslt",  // Linux/Mac
+      // "command": "del /f app.log",  // Windows
+      "presentation": {
+        "reveal": "silent"
+      }
+    }
+  ]
+}

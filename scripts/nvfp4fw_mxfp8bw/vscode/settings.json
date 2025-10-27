@@ -1,0 +1,20 @@
+{
+    "workbench.colorTheme": "Dracula Theme",
+    "terminal.integrated.env.linux": {
+        // "PIP_BREAK_SYSTEM_PACKAGES": "1", // to avoid pip installing packages that break system packages
+        "WS_ROOT": "${workspaceFolder}",         // wr bash function to cd into workspace root
+        "WS_ACTIVE_DIR": "${workspaceFolder}/scripts/nvfp4fw_mxfp8bw/",  // ad  bash function to cd into active dir
+        "WS_ACTIVE_DIR2": "/root/work/run/qat_experiment_1759296130", // ad2 bash function to cd into active dir2
+        "WS_ACTIVE_DIR3": "/root/work/dev/trtmo/TensorRT-Model-Optimizer/examples/nemo_run"  // ad3 bash function to cd into active dir3
+    },
+    // pytest configuration
+    "python.testing.cwd": "${workspaceFolder}/path/to/test_folder",
+    // "python.testing.pytestArgs": [] // use this to filter test files
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.analysis.extraPaths": [
+        "/opt/NeMo",
+        // "/root/work/dev/trtmo/TensorRT-Model-Optimizer",
+        "/root/work/dev/trtmo/TensorRT-Model-Optimizer/examples/nemo_run/"
+    ], // add extra paths for pylance, useful for scripts outside of site-packages
+}
