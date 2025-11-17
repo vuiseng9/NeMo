@@ -176,6 +176,7 @@ if __name__ == "__main__":
             executor=executor,
             name=exp_name,
             plugins=plugins,
+            tail_logs=True,
         )
 
         if not args.dryrun:

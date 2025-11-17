@@ -26,6 +26,7 @@ from nemo.collections.llm.recipes.precision.mixed_precision import (
     bf16_with_fp8_mixed,
     bf16_with_fp8_subchannel_scaling_mixed,
     bf16_with_mxfp8_mixed,
+    bf16_with_fw_nvfp4_bw_mxfp8
 )
 from nemo.lightning.pytorch.callbacks.flops_callback import FLOPsMeasurementCallback
 from nemo.lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
@@ -96,7 +97,8 @@ def get_user_configs(gpu: str, task: str, model_name: str, model_size: str, args
 
     enable_cuda_graphs = config.get("cuda_graphs") if args.cuda_graphs is None else args.cuda_graphs
     enable_cuda_graphs = False if enable_cuda_graphs is None else bool(int(enable_cuda_graphs))
-
+    # enable_cuda_graphs = False
+    
     use_mcore_fsdp = config.get("use_mcore_fsdp") if args.use_mcore_fsdp is None else args.use_mcore_fsdp
     use_mcore_fsdp = False if use_mcore_fsdp is None else bool(int(use_mcore_fsdp))
 
@@ -220,17 +222,19 @@ def set_precision_configs(recipe, compute_dtype: str, fp8_recipe: str | None = N
             recipe.trainer.plugins = bf16_with_mxfp8_mixed()
         elif fp8_recipe.lower() == "ss":
             recipe.trainer.plugins = bf16_with_fp8_subchannel_scaling_mixed()
+        elif fp8_recipe.lower() == "nv4f_mx8b":
+            recipe.trainer.plugins = bf16_with_fw_nvfp4_bw_mxfp8()
 
     recipe.trainer.plugins.grad_reduce_in_fp32 = False
 
     # Enable reuse_grad_buf_for_mxfp8_param_ag for MXFP8 and disable AG overlap
     # because it is not supported with reuse_grad_buf_for_mxfp8_param_ag
-    if compute_dtype.lower() == "fp8" and fp8_recipe.lower() == "mxfp8":
+    if compute_dtype.lower() == "fp8" and (fp8_recipe.lower() == "mxfp8" or fp8_recipe.lower() == "nv4f_mx8b"):
         comm_overlap_callback_idx = get_comm_overlap_callback_idx(recipe.trainer.callbacks)
         if comm_overlap_callback_idx is not None:
             recipe.trainer.callbacks[comm_overlap_callback_idx].overlap_param_gather = False
         logging.warning(
-            "When using MXFP8, to reduce memory usage, we use reuse_grad_buf_for_mxfp8_param_ag. "
+            "When using MXFP8/nv4f_mx8b, to reduce memory usage, we use reuse_grad_buf_for_mxfp8_param_ag. "
             "Disabling AG overlap because it is not supported with reuse_grad_buf_for_mxfp8_param_ag."
         )
 

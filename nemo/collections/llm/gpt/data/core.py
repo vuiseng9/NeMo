@@ -67,7 +67,7 @@ def create_sft_dataset(
     label_key: str = "output",
     answer_only_loss: bool = True,
     truncation_field: str = "input",
-    pad_to_max_length: bool = False,
+    pad_to_max_length: bool = True,
     index_mapping_dir: Optional[str] = None,
     prompt_template: str = "{input} {output}",
     truncation_method: str = "right",

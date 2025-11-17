@@ -1,22 +1,142 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+import os
+import sys
+from typing import Dict, List
+
+import nemo_run as run
+from nemo_run.config import get_nemorun_home
+from nemo_run.core.execution.launcher import SlurmTemplate
+
+from nemo.lightning.base import DEFAULT_NEMO_CACHE_HOME
+from nemo.utils import logging
 
 import argparse
-
 from nemo_run.config import get_nemorun_home
+import wandb
 
-from .utils import DEFAULT_NEMO_HOME
+DEFAULT_NEMO_HOME = os.getenv('NEMO_HOME', DEFAULT_NEMO_CACHE_HOME)
+
+# NOTE: If you update this template,
+# PLEASE test it by submitting a job to GPU/node/cluster and verifying the sbatch and bash scripts.
+INLINE_TEMPLATE = r"""
+#!/usr/bin/env bash
+set -euo pipefail
+
+# NOTE: DO NOT change the single quotes to double quotes.
+bash -c '{{ pre_cmds }} {{ command }}'
+"""
+
+def import_ckpt_fn(executor: run.SlurmExecutor, model: run.Config, source: str):
+    """
+    Downloads/Acceses checkpoint to be used for fine-tuning. `import_ckpt` first tries find the nemo checkpoint in
+    <NEMO_HOME>/models/. For eg: for llama3 8b, the path will look like- <NEMO_HOME>/models/meta-llama/Meta-Llama-3-8B
+    If missing, tries to downloads at the same location from HuggingFace and converts it nemo format.
+
+    Args:
+        source (str): HuggingFace URL. For eg- hf://meta-llama/Meta-Llama-3-70B
+    """
+    from copy import deepcopy
+
+    from nemo.collections.llm import import_ckpt
+
+    import_executor = deepcopy(executor)
+    import_executor.ntasks_per_node = 1
+    import_executor.nodes = 1
+
+    return run.Partial(import_ckpt, model=model, source=source, overwrite=False), import_executor
+
+
+def local_executor(
+    gpu: str,
+    log_dir: str,
+    nodes: int,
+    num_gpus_per_node: int,
+    custom_mounts: List[str] = [],
+    custom_env_vars: Dict[str, str] = {},
+    custom_srun_args: List[str] = [],
+    nemo_home: str = DEFAULT_NEMO_HOME,
+    custom_bash_cmds: List[str] = None,
+) -> run.SlurmExecutor:
+    """
+    Slurm cluster definition with appropriate cluster params and NeMo container params needed for pre-training
+    and fine-tuning experiments
+    """
+    PERF_ENV_VARS = {
+        "TORCH_NCCL_AVOID_RECORD_STREAMS": "1",  # Disable caching NCCL communication buffer memory
+        "TRANSFORMERS_OFFLINE": "1",  # Enable online downloads from HuggingFace
+        "TOKENIZERS_PARALLELISM": "False",  # Restrict warning message prints
+        "NCCL_NVLS_ENABLE": "0",  # Disable NVLink SHARP to save memory
+        "NVTE_FLASH_ATTN": "1",  # Enable Flash Attention, which is needed to enable cuDNN fused attention
+        "NVTE_FUSED_ATTN": "1",  # Enable cuDNN fused attention
+        "NEMO_LOG_MEMORY_USAGE": "1",  # Print memory allocation
+    }
+
+    custom_bash_cmds = [] if custom_bash_cmds is None else custom_bash_cmds
+    err_msgs = []
+    mounts = []
+    srun_args = custom_srun_args.copy() + ["--mpi=pmix", "--no-container-mount-home"]
+
+    if gpu.lower() not in ['b200']:
+        # TODO: we currently disable PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+        # on B200 as it causes an unexpected error. Add back when issue is debugged and fixed.
+        PERF_ENV_VARS["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    PERF_ENV_VARS["NEMORUN_HOME"] = log_dir
+
+    if gpu.lower() == 'gb200':
+        PERF_ENV_VARS["NCCL_NET_GDR_LEVEL"] = "PHB"  # For NCCL 2.25
+        PERF_ENV_VARS["NCCL_NET_GDR_C2C"] = "1"  # For NCCL 2.26
+
+    if nemo_home != DEFAULT_NEMO_CACHE_HOME:  # DO NOT change this to 'DEFAULT_NEMO_HOME'/'NEMO_HOME'
+        PERF_ENV_VARS["NEMO_HOME"] = nemo_home
+        mounts.extend([f"{nemo_home}:{nemo_home}"])
+
+    PERF_ENV_VARS.update({"HF_TOKEN": os.getenv("HF_TOKEN", ""), "TRANSFORMERS_OFFLINE": "0"})
+    PERF_ENV_VARS.update({"WANDB_API_KEY": os.getenv("WANDB_API_KEY", "")})
+    
+    PERF_ENV_VARS |= custom_env_vars
+    mounts.extend(custom_mounts)
+
+    # add --segment flag to sbatch if job uses GB200 and goes beyond one rack.
+    segment = None
+    if num_gpus_per_node == 4 and nodes > 18:
+        for segment_candidate in range(18, 0, -1):
+            if nodes % segment_candidate == 0:
+                segment = segment_candidate
+                break
+
+    numa_divisor = 2 if gpu.lower() == 'gb200' else 4
+    numa_cmd = f"numactl --cpunodebind=$((SLURM_LOCALID/{numa_divisor})) --membind=$((SLURM_LOCALID/{numa_divisor}))"
+    custom_bash_cmds.append(numa_cmd)
+
+    launcher = SlurmTemplate(
+        template_inline=INLINE_TEMPLATE,
+        template_vars={"pre_cmds": " ; ".join(custom_bash_cmds)},
+    )
+
+    executor = run.LocalExecutor(
+        nodes=nodes,
+        ntasks_per_node=num_gpus_per_node,
+        env_vars=PERF_ENV_VARS,
+        # launcher=launcher,
+    )
+
+    return executor
+
+
+def is_wandb_logged_in():
+    """Check if wandb is configured with an API key"""
+    try:
+        # Check environment variable
+        if os.environ.get("WANDB_API_KEY"):
+            return True
+        
+        # Check wandb settings
+        api_key = wandb.api.api_key
+        if api_key:
+            return True
+            
+        return False
+    except Exception:
+        return False
 
 
 def parse_cli_args():
@@ -27,20 +147,6 @@ def parse_cli_args():
     parser = argparse.ArgumentParser(description="NeMo2.0 Performance Pretraining and Fine-Tuning")
 
     parser.add_argument(
-        "-a",
-        "--account",
-        type=str,
-        help="Slurm account to use for experiment",
-        required=False,
-    )
-    parser.add_argument(
-        "-p",
-        "--partition",
-        type=str,
-        help="Slurm partition to use for experiment",
-        required=False,
-    )
-    parser.add_argument(
         "-g",
         "--gpu",
         type=str,
@@ -48,34 +154,7 @@ def parse_cli_args():
         help="Target gpu type.",
         required=True,
     )
-    parser.add_argument(
-        "-l",
-        "--log_dir",
-        type=str,
-        help=f"Directory for logging experiment results. Defaults to {get_nemorun_home()}",
-        required=False,
-        default=get_nemorun_home(),
-    )
-    parser.add_argument(
-        "-t",
-        "--time_limit",
-        type=str,
-        help="Maximum time limit to run experiment for. Defaults to 30 minutes (format- 'HH:MM:SS')",
-        required=False,
-        default="00:30:00",
-    )
-    container_img_msg = [
-        "NeMo container to use for experiment. Defaults to latest dev container- 'nvcr.io/nvidia/nemo:dev'",
-        "Make sure your NGC credentials are accessible in your environment.",
-    ]
-    parser.add_argument(
-        "-i",
-        "--container_image",
-        type=str,
-        help=" ".join(container_img_msg),
-        required=False,
-        default="nvcr.io/nvidia/nemo:dev",
-    )
+
     parser.add_argument(
         "-c",
         "--compute_dtype",
@@ -119,38 +198,10 @@ def parse_cli_args():
         default=None,
     )
     parser.add_argument(
-        "-tb",
-        "--tensorboard",
-        help="Enable tensorboard logging. Disabled by default",
-        action="store_true",
-    )
-    parser.add_argument(
-        "-wd",
-        "--wandb",
-        help="Enable wandb logging. Disabled by default",
-        action="store_true",
-    )
-    parser.add_argument(
-        "-wdk",
-        "--wandb_key",
-        type=str,
-        help="wandb key. Needed for wandb logger projetion to server",
-        required=False,
-        default=None,
-    )
-    parser.add_argument(
         "-wdp",
-        "--wandb_prj_name",
+        "--wandb_project",
         type=str,
         help="wandb project name",
-        required=False,
-        default=None,
-    )
-    parser.add_argument(
-        "-wdj",
-        "--wandb_job_name",
-        type=str,
-        help="wandb job name",
         required=False,
         default=None,
     )
@@ -160,13 +211,6 @@ def parse_cli_args():
         choices=["sft", "lora"],
         help="Finetuning scheme to use. Defaults to 'lora'",
         default='lora',
-    )
-    parser.add_argument(
-        "-hf",
-        "--hf_token",
-        type=str,
-        help="HuggingFace token. Defaults to None. Required for accessing tokenizers and checkpoints.",
-        default=None,
     )
     nemo_home_msg = [
         "Sets env var `NEMO_HOME` (on compute node using sbatch script)- directory where NeMo searches",
@@ -274,9 +318,32 @@ def parse_cli_args():
         type=int,
         help="Number of train steps. Defaults to 100",
         required=False,
-        default=100,
+        default=200,
     )
-
+    parser.add_argument(
+        "-vms",
+        "--val_max_steps",
+        type=int,
+        help="Number of train steps. Defaults to 100",
+        required=False,
+        default=32,
+    )
+    parser.add_argument(
+        "-vi",
+        "--val_interval",
+        type=int,
+        help="Number of train steps. Defaults to 100",
+        required=False,
+        default=50,
+    )
+    parser.add_argument(
+        "-si",
+        "--save_interval",
+        type=int,
+        help="Number of train steps. Defaults to 100",
+        required=False,
+        default=50,
+    )
     def bool_arg(arg):
         if arg.lower() in ['true', '1', 't', 'yes', 'y']:
             return True
@@ -291,7 +358,7 @@ def parse_cli_args():
         help="Enable CUDA graphs. Disabled by default",
         type=bool_arg,
         required=False,
-        default=None,  # NOTE: DO NOT SET DEFAULT TO FALSE, IT WILL BE OVERRIDDEN BY THE RECOMMENDED MODEL CONFIGS
+        default=False,  # NOTE: DO NOT SET DEFAULT TO FALSE, IT WILL BE OVERRIDDEN BY THE RECOMMENDED MODEL CONFIGS
     )
     parser.add_argument(
         "-fsdp",
@@ -385,5 +452,11 @@ def parse_cli_args():
         required=False,
         default=None,
     )
-
+    parser.add_argument(
+        "-dp",
+        "--data_path",
+        type=str,
+        help="Path to preprocessed dataset",
+        required=True,
+    )
     return parser
