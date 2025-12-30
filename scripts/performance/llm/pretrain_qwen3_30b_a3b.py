@@ -121,6 +121,8 @@ if __name__ == "__main__":
     )
     exp_name = f"{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
 
+    recipe.data.tokenizer.pretrained_model_name = "/root/work/Qwen3-30B-A3B"
+    
     executor = local_executor(
         args.gpu.lower(),
         args.account,
