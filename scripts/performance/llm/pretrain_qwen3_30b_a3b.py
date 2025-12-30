@@ -22,7 +22,7 @@ from nemo.lightning.pytorch.callbacks.moe_token_drop import MegatronTokenDropCal
 from nemo.lightning.run.plugins import MemoryProfilePlugin, NsysPlugin
 
 from ..argument_parser import parse_additional_slurm_params, parse_cli_args
-from ..executors import slurm_executor
+from ..executors import slurm_executor, local_executor
 from ..helpers import (
     args_sanity_check,
     build_perf_env_plugin,
@@ -121,7 +121,7 @@ if __name__ == "__main__":
     )
     exp_name = f"{splitext(basename(__file__))[0]}_{args.compute_dtype}_{exp_config}"
 
-    executor = slurm_executor(
+    executor = local_executor(
         args.gpu.lower(),
         args.account,
         args.partition,
@@ -155,6 +155,7 @@ if __name__ == "__main__":
             executor=executor,
             name=exp_name,
             plugins=plugins,
+            tail_logs=True,
         )
 
         if not args.dryrun:
